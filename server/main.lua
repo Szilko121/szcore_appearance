@@ -1,3 +1,37 @@
+local function registerSzCoreCallback(name, fn)
+    CreateThread(function()
+        local deadline = GetGameTimer() + 15000
+
+        while GetGameTimer() < deadline do
+            if GetResourceState('szcore') == 'started' then
+                local ok, success, err = pcall(function()
+                    return registerSzCoreCallback(name, fn)
+                end)
+
+                if ok and success ~= false then
+                    return
+                end
+
+                if ok and success == false then
+                    print(('[%s] SzCore callback registration rejected: %s (%s)'):format(
+                        GetCurrentResourceName(),
+                        tostring(name),
+                        tostring(err)
+                    ))
+                    return
+                end
+            end
+
+            Wait(100)
+        end
+
+        print(('[%s] SzCore callback registration timed out: %s'):format(
+            GetCurrentResourceName(),
+            tostring(name)
+        ))
+    end)
+end
+
 local rate={}
 local function get(source)
     local p=exports.szcore:GetPlayer(source);if not p then return nil end
@@ -26,7 +60,7 @@ local function save(source,data)
     MySQL.prepare.await([[INSERT INTO szcore_appearance(citizenid,appearance) VALUES (?,?) ON DUPLICATE KEY UPDATE appearance=VALUES(appearance)]],{p.PlayerData.citizenid,encoded})
     exports.szcore:Audit('appearance.save',source,p.PlayerData.citizenid,{});return true
 end
-exports.szcore:CreateCallback('szcore_appearance:get',get);exports.szcore:CreateCallback('szcore_appearance:save',save)
+registerSzCoreCallback('szcore_appearance:get',get);registerSzCoreCallback('szcore_appearance:save',save)
 local function outfits(source)
     local p=exports.szcore:GetPlayer(source);if not p then return {} end
     return MySQL.query.await('SELECT id,name,created_at,updated_at FROM szcore_outfits WHERE citizenid=? ORDER BY updated_at DESC',{p.PlayerData.citizenid}) or {}
@@ -46,10 +80,10 @@ local function getOutfit(source,id)
     local p=exports.szcore:GetPlayer(source);if not p then return nil end
     local raw=MySQL.scalar.await('SELECT appearance FROM szcore_outfits WHERE id=? AND citizenid=?',{tonumber(id),p.PlayerData.citizenid});if not raw then return nil end;local ok,d=pcall(json.decode,raw);return ok and d or nil
 end
-exports.szcore:CreateCallback('szcore_appearance:outfits',outfits)
-exports.szcore:CreateCallback('szcore_appearance:saveOutfit',saveOutfit)
-exports.szcore:CreateCallback('szcore_appearance:deleteOutfit',deleteOutfit)
-exports.szcore:CreateCallback('szcore_appearance:getOutfit',getOutfit)
+registerSzCoreCallback('szcore_appearance:outfits',outfits)
+registerSzCoreCallback('szcore_appearance:saveOutfit',saveOutfit)
+registerSzCoreCallback('szcore_appearance:deleteOutfit',deleteOutfit)
+registerSzCoreCallback('szcore_appearance:getOutfit',getOutfit)
 RegisterNetEvent('szcore_appearance:save',function(data)save(source,data)end)
 AddEventHandler('playerDropped',function()rate[source]=nil end)
 AddEventHandler('szcore:server:playerLoaded',function(source)local data=get(source);if data then TriggerClientEvent('szcore_appearance:apply',source,data)end end)
